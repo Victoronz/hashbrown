@@ -1,6 +1,7 @@
 use crate::{Equivalent, TryReserveError};
 use core::hash::{BuildHasher, Hash};
 use core::iter::{Chain, FusedIterator};
+use core::marker::PhantomData;
 use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Sub, SubAssign};
 use core::{fmt, mem};
 use map::make_hash;
@@ -287,9 +288,10 @@ impl<T, S, A: Allocator> HashSet<T, S, A> {
     /// }
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    pub fn iter(&self) -> Iter<'_, T> {
+    pub fn iter(&self) -> Iter<'_, T, S> {
         Iter {
             iter: self.map.keys(),
+            marker: PhantomData,
         }
     }
 
@@ -345,9 +347,10 @@ impl<T, S, A: Allocator> HashSet<T, S, A> {
     /// assert!(set.is_empty());
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    pub fn drain(&mut self) -> Drain<'_, T, A> {
+    pub fn drain(&mut self) -> Drain<'_, T, S, A> {
         Drain {
             iter: self.map.drain(),
+            marker: PhantomData,
         }
     }
 
@@ -401,7 +404,7 @@ impl<T, S, A: Allocator> HashSet<T, S, A> {
     /// assert_eq!(odds, vec![1, 3, 5, 7]);
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    pub fn extract_if<F>(&mut self, f: F) -> ExtractIf<'_, T, F, A>
+    pub fn extract_if<F>(&mut self, f: F) -> ExtractIf<'_, T, F, S, A>
     where
         F: FnMut(&T) -> bool,
     {
@@ -411,6 +414,7 @@ impl<T, S, A: Allocator> HashSet<T, S, A> {
                 iter: unsafe { self.map.table.iter() },
                 table: &mut self.map.table,
             },
+            marker: PhantomData,
         }
     }
 
@@ -1644,8 +1648,9 @@ where
 ///
 /// [`HashSet`]: struct.HashSet.html
 /// [`iter`]: struct.HashSet.html#method.iter
-pub struct Iter<'a, K> {
-    iter: Keys<'a, K, ()>,
+pub struct Iter<'a, K, S> {
+    iter: Keys<'a, K, (), S>,
+    marker: PhantomData<S>,
 }
 
 /// An owning iterator over the items of a `HashSet`.
@@ -1655,8 +1660,9 @@ pub struct Iter<'a, K> {
 ///
 /// [`HashSet`]: struct.HashSet.html
 /// [`into_iter`]: struct.HashSet.html#method.into_iter
-pub struct IntoIter<K, A: Allocator = Global> {
-    iter: map::IntoIter<K, (), A>,
+pub struct IntoIter<K, S, A: Allocator = Global> {
+    iter: map::IntoIter<K, (), S, A>,
+    marker: PhantomData<S>,
 }
 
 /// A draining iterator over the items of a `HashSet`.
@@ -1666,8 +1672,9 @@ pub struct IntoIter<K, A: Allocator = Global> {
 ///
 /// [`HashSet`]: struct.HashSet.html
 /// [`drain`]: struct.HashSet.html#method.drain
-pub struct Drain<'a, K, A: Allocator = Global> {
-    iter: map::Drain<'a, K, (), A>,
+pub struct Drain<'a, K, S, A: Allocator = Global> {
+    iter: map::Drain<'a, K, (), S, A>,
+    marker: PhantomData<S>,
 }
 
 /// A draining iterator over entries of a `HashSet` which don't satisfy the predicate `f`.
@@ -1678,12 +1685,13 @@ pub struct Drain<'a, K, A: Allocator = Global> {
 /// [`extract_if`]: struct.HashSet.html#method.extract_if
 /// [`HashSet`]: struct.HashSet.html
 #[must_use = "Iterators are lazy unless consumed"]
-pub struct ExtractIf<'a, K, F, A: Allocator = Global>
+pub struct ExtractIf<'a, K, F, S, A: Allocator = Global>
 where
     F: FnMut(&K) -> bool,
 {
     f: F,
     inner: RawExtractIf<'a, (K, ()), A>,
+    marker: PhantomData<S>,
 }
 
 /// A lazy iterator producing elements in the intersection of `HashSet`s.
@@ -1695,7 +1703,7 @@ where
 /// [`intersection`]: struct.HashSet.html#method.intersection
 pub struct Intersection<'a, T, S, A: Allocator = Global> {
     // iterator of the first set
-    iter: Iter<'a, T>,
+    iter: Iter<'a, T, S>,
     // the second set
     other: &'a HashSet<T, S, A>,
 }
@@ -1709,7 +1717,7 @@ pub struct Intersection<'a, T, S, A: Allocator = Global> {
 /// [`difference`]: struct.HashSet.html#method.difference
 pub struct Difference<'a, T, S, A: Allocator = Global> {
     // iterator of the first set
-    iter: Iter<'a, T>,
+    iter: Iter<'a, T, S>,
     // the second set
     other: &'a HashSet<T, S, A>,
 }
@@ -1733,22 +1741,22 @@ pub struct SymmetricDifference<'a, T, S, A: Allocator = Global> {
 /// [`HashSet`]: struct.HashSet.html
 /// [`union`]: struct.HashSet.html#method.union
 pub struct Union<'a, T, S, A: Allocator = Global> {
-    iter: Chain<Iter<'a, T>, Difference<'a, T, S, A>>,
+    iter: Chain<Iter<'a, T, S>, Difference<'a, T, S, A>>,
 }
 
 impl<'a, T, S, A: Allocator> IntoIterator for &'a HashSet<T, S, A> {
     type Item = &'a T;
-    type IntoIter = Iter<'a, T>;
+    type IntoIter = Iter<'a, T, S>;
 
     #[cfg_attr(feature = "inline-more", inline)]
-    fn into_iter(self) -> Iter<'a, T> {
+    fn into_iter(self) -> Iter<'a, T, S> {
         self.iter()
     }
 }
 
 impl<T, S, A: Allocator> IntoIterator for HashSet<T, S, A> {
     type Item = T;
-    type IntoIter = IntoIter<T, A>;
+    type IntoIter = IntoIter<T, S, A>;
 
     /// Creates a consuming iterator, that is, one that moves each value out
     /// of the set in arbitrary order. The set cannot be used after calling
@@ -1771,30 +1779,33 @@ impl<T, S, A: Allocator> IntoIterator for HashSet<T, S, A> {
     /// }
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    fn into_iter(self) -> IntoIter<T, A> {
+    fn into_iter(self) -> IntoIter<T, S, A> {
         IntoIter {
             iter: self.map.into_iter(),
+            marker: PhantomData,
         }
     }
 }
 
-impl<K> Clone for Iter<'_, K> {
+impl<K, S> Clone for Iter<'_, K, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn clone(&self) -> Self {
         Iter {
             iter: self.iter.clone(),
+            marker: PhantomData,
         }
     }
 }
-impl<K> Default for Iter<'_, K> {
+impl<K, S> Default for Iter<'_, K, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn default() -> Self {
         Iter {
             iter: Default::default(),
+            marker: PhantomData,
         }
     }
 }
-impl<'a, K> Iterator for Iter<'a, K> {
+impl<'a, K, S> Iterator for Iter<'a, K, S> {
     type Item = &'a K;
 
     #[cfg_attr(feature = "inline-more", inline)]
@@ -1814,29 +1825,30 @@ impl<'a, K> Iterator for Iter<'a, K> {
         self.iter.fold(init, f)
     }
 }
-impl<K> ExactSizeIterator for Iter<'_, K> {
+impl<K, S> ExactSizeIterator for Iter<'_, K, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn len(&self) -> usize {
         self.iter.len()
     }
 }
-impl<K> FusedIterator for Iter<'_, K> {}
+impl<K, S> FusedIterator for Iter<'_, K, S> {}
 
-impl<K: fmt::Debug> fmt::Debug for Iter<'_, K> {
+impl<K: fmt::Debug, S> fmt::Debug for Iter<'_, K, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.clone()).finish()
     }
 }
 
-impl<K, A: Allocator> Default for IntoIter<K, A> {
+impl<K, S, A: Allocator> Default for IntoIter<K, S, A> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn default() -> Self {
         IntoIter {
             iter: Default::default(),
+            marker: PhantomData,
         }
     }
 }
-impl<K, A: Allocator> Iterator for IntoIter<K, A> {
+impl<K, S, A: Allocator> Iterator for IntoIter<K, S, A> {
     type Item = K;
 
     #[cfg_attr(feature = "inline-more", inline)]
@@ -1860,22 +1872,22 @@ impl<K, A: Allocator> Iterator for IntoIter<K, A> {
         self.iter.fold(init, |acc, (k, ())| f(acc, k))
     }
 }
-impl<K, A: Allocator> ExactSizeIterator for IntoIter<K, A> {
+impl<K, S, A: Allocator> ExactSizeIterator for IntoIter<K, S, A> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn len(&self) -> usize {
         self.iter.len()
     }
 }
-impl<K, A: Allocator> FusedIterator for IntoIter<K, A> {}
+impl<K, S, A: Allocator> FusedIterator for IntoIter<K, S, A> {}
 
-impl<K: fmt::Debug, A: Allocator> fmt::Debug for IntoIter<K, A> {
+impl<K: fmt::Debug, S, A: Allocator> fmt::Debug for IntoIter<K, S, A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let entries_iter = self.iter.iter().map(|(k, _)| k);
         f.debug_list().entries(entries_iter).finish()
     }
 }
 
-impl<K, A: Allocator> Iterator for Drain<'_, K, A> {
+impl<K, S, A: Allocator> Iterator for Drain<'_, K, S, A> {
     type Item = K;
 
     #[cfg_attr(feature = "inline-more", inline)]
@@ -1899,22 +1911,22 @@ impl<K, A: Allocator> Iterator for Drain<'_, K, A> {
         self.iter.fold(init, |acc, (k, ())| f(acc, k))
     }
 }
-impl<K, A: Allocator> ExactSizeIterator for Drain<'_, K, A> {
+impl<K, S, A: Allocator> ExactSizeIterator for Drain<'_, K, S, A> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn len(&self) -> usize {
         self.iter.len()
     }
 }
-impl<K, A: Allocator> FusedIterator for Drain<'_, K, A> {}
+impl<K, S, A: Allocator> FusedIterator for Drain<'_, K, S, A> {}
 
-impl<K: fmt::Debug, A: Allocator> fmt::Debug for Drain<'_, K, A> {
+impl<K: fmt::Debug, S, A: Allocator> fmt::Debug for Drain<'_, K, S, A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let entries_iter = self.iter.iter().map(|(k, _)| k);
         f.debug_list().entries(entries_iter).finish()
     }
 }
 
-impl<K, F, A: Allocator> Iterator for ExtractIf<'_, K, F, A>
+impl<K, F, S, A: Allocator> Iterator for ExtractIf<'_, K, F, S, A>
 where
     F: FnMut(&K) -> bool,
 {
@@ -1933,7 +1945,7 @@ where
     }
 }
 
-impl<K, F, A: Allocator> FusedIterator for ExtractIf<'_, K, F, A> where F: FnMut(&K) -> bool {}
+impl<K, F, S, A: Allocator> FusedIterator for ExtractIf<'_, K, F, S, A> where F: FnMut(&K) -> bool {}
 
 impl<T, S, A: Allocator> Clone for Intersection<'_, T, S, A> {
     #[cfg_attr(feature = "inline-more", inline)]
@@ -2545,33 +2557,37 @@ fn assert_covariance() {
     fn set<'new>(v: HashSet<&'static str>) -> HashSet<&'new str> {
         v
     }
-    fn iter<'a, 'new>(v: Iter<'a, &'static str>) -> Iter<'a, &'new str> {
+    fn iter<'a, 'new, S>(v: Iter<'a, &'static str, S>) -> Iter<'a, &'new str, S> {
         v
     }
-    fn into_iter<'new, A: Allocator>(v: IntoIter<&'static str, A>) -> IntoIter<&'new str, A> {
+    fn into_iter<'new, S, A: Allocator>(
+        v: IntoIter<&'static str, S, A>,
+    ) -> IntoIter<&'new str, S, A> {
         v
     }
-    fn difference<'a, 'new, A: Allocator>(
-        v: Difference<'a, &'static str, DefaultHashBuilder, A>,
-    ) -> Difference<'a, &'new str, DefaultHashBuilder, A> {
+    fn difference<'a, 'new, S, A: Allocator>(
+        v: Difference<'a, &'static str, S, A>,
+    ) -> Difference<'a, &'new str, S, A> {
         v
     }
-    fn symmetric_difference<'a, 'new, A: Allocator>(
-        v: SymmetricDifference<'a, &'static str, DefaultHashBuilder, A>,
-    ) -> SymmetricDifference<'a, &'new str, DefaultHashBuilder, A> {
+    fn symmetric_difference<'a, 'new, S, A: Allocator>(
+        v: SymmetricDifference<'a, &'static str, S, A>,
+    ) -> SymmetricDifference<'a, &'new str, S, A> {
         v
     }
-    fn intersection<'a, 'new, A: Allocator>(
-        v: Intersection<'a, &'static str, DefaultHashBuilder, A>,
-    ) -> Intersection<'a, &'new str, DefaultHashBuilder, A> {
+    fn intersection<'a, 'new, S, A: Allocator>(
+        v: Intersection<'a, &'static str, S, A>,
+    ) -> Intersection<'a, &'new str, S, A> {
         v
     }
-    fn union<'a, 'new, A: Allocator>(
-        v: Union<'a, &'static str, DefaultHashBuilder, A>,
-    ) -> Union<'a, &'new str, DefaultHashBuilder, A> {
+    fn union<'a, 'new, S, A: Allocator>(
+        v: Union<'a, &'static str, S, A>,
+    ) -> Union<'a, &'new str, S, A> {
         v
     }
-    fn drain<'new, A: Allocator>(d: Drain<'static, &'static str, A>) -> Drain<'new, &'new str, A> {
+    fn drain<'new, S, A: Allocator>(
+        d: Drain<'static, &'static str, S, A>,
+    ) -> Drain<'new, &'new str, S, A> {
         d
     }
 }

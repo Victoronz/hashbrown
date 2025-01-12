@@ -647,8 +647,11 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     /// assert_eq!(map.len(), 3);
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    pub fn keys(&self) -> Keys<'_, K, V> {
-        Keys { inner: self.iter() }
+    pub fn keys(&self) -> Keys<'_, K, V, S> {
+        Keys {
+            inner: self.iter(),
+            marker: PhantomData,
+        }
     }
 
     /// An iterator visiting all values in arbitrary order.
@@ -679,8 +682,11 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     /// assert_eq!(map.len(), 3);
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    pub fn values(&self) -> Values<'_, K, V> {
-        Values { inner: self.iter() }
+    pub fn values(&self) -> Values<'_, K, V, S> {
+        Values {
+            inner: self.iter(),
+            marker: PhantomData,
+        }
     }
 
     /// An iterator visiting all values mutably in arbitrary order.
@@ -717,9 +723,10 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     /// assert_eq!(map.len(), 3);
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    pub fn values_mut(&mut self) -> ValuesMut<'_, K, V> {
+    pub fn values_mut(&mut self) -> ValuesMut<'_, K, V, S> {
         ValuesMut {
             inner: self.iter_mut(),
+            marker: PhantomData,
         }
     }
 
@@ -751,7 +758,7 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     /// assert_eq!(map.len(), 3);
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    pub fn iter(&self) -> Iter<'_, K, V> {
+    pub fn iter(&self) -> Iter<'_, K, V, S> {
         // Here we tie the lifetime of self to the iter.
         unsafe {
             Iter {
@@ -796,7 +803,7 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     /// assert_eq!(map.len(), 3);
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    pub fn iter_mut(&mut self) -> IterMut<'_, K, V> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, K, V, S> {
         // Here we tie the lifetime of self to the iter.
         unsafe {
             IterMut {
@@ -885,9 +892,10 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     /// assert!(a.is_empty());
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    pub fn drain(&mut self) -> Drain<'_, K, V, A> {
+    pub fn drain(&mut self) -> Drain<'_, K, V, S, A> {
         Drain {
             inner: self.table.drain(),
+            marker: PhantomData,
         }
     }
 
@@ -973,7 +981,7 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     /// assert_eq!(map.len(), 8);
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    pub fn extract_if<F>(&mut self, f: F) -> ExtractIf<'_, K, V, F, A>
+    pub fn extract_if<F>(&mut self, f: F) -> ExtractIf<'_, K, V, F, S, A>
     where
         F: FnMut(&K, &mut V) -> bool,
     {
@@ -983,6 +991,7 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
                 iter: unsafe { self.table.iter() },
                 table: &mut self.table,
             },
+            marker: PhantomData,
         }
     }
 
@@ -1032,9 +1041,10 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     /// assert_eq!(vec, ["a", "b", "c"]);
     /// ```
     #[inline]
-    pub fn into_keys(self) -> IntoKeys<K, V, A> {
+    pub fn into_keys(self) -> IntoKeys<K, V, S, A> {
         IntoKeys {
             inner: self.into_iter(),
+            marker: PhantomData,
         }
     }
 
@@ -1060,9 +1070,10 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     /// assert_eq!(vec, [1, 2, 3]);
     /// ```
     #[inline]
-    pub fn into_values(self) -> IntoValues<K, V, A> {
+    pub fn into_values(self) -> IntoValues<K, V, S, A> {
         IntoValues {
             inner: self.into_iter(),
+            marker: PhantomData,
         }
     }
 }
@@ -2152,13 +2163,13 @@ where
 /// assert_eq!(iter.next(), None);
 /// assert_eq!(iter.next(), None);
 /// ```
-pub struct Iter<'a, K, V> {
+pub struct Iter<'a, K, V, S> {
     inner: RawIter<(K, V)>,
-    marker: PhantomData<(&'a K, &'a V)>,
+    marker: PhantomData<(&'a K, &'a V, S)>,
 }
 
 // FIXME(#26925) Remove in favor of `#[derive(Clone)]`
-impl<K, V> Clone for Iter<'_, K, V> {
+impl<K, V, S> Clone for Iter<'_, K, V, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn clone(&self) -> Self {
         Iter {
@@ -2168,7 +2179,7 @@ impl<K, V> Clone for Iter<'_, K, V> {
     }
 }
 
-impl<K: Debug, V: Debug> fmt::Debug for Iter<'_, K, V> {
+impl<K: Debug, V: Debug, S> fmt::Debug for Iter<'_, K, V, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.clone()).finish()
     }
@@ -2201,21 +2212,21 @@ impl<K: Debug, V: Debug> fmt::Debug for Iter<'_, K, V> {
 /// assert_eq!(map.get(&1).unwrap(), &"One Mississippi".to_owned());
 /// assert_eq!(map.get(&2).unwrap(), &"Two Mississippi".to_owned());
 /// ```
-pub struct IterMut<'a, K, V> {
+pub struct IterMut<'a, K, V, S> {
     inner: RawIter<(K, V)>,
     // To ensure invariance with respect to V
-    marker: PhantomData<(&'a K, &'a mut V)>,
+    marker: PhantomData<(&'a K, &'a mut V, S)>,
 }
 
 // We override the default Send impl which has K: Sync instead of K: Send. Both
 // are correct, but this one is more general since it allows keys which
 // implement Send but not Sync.
-unsafe impl<K: Send, V: Send> Send for IterMut<'_, K, V> {}
+unsafe impl<K: Send, V: Send, S> Send for IterMut<'_, K, V, S> {}
 
-impl<K, V> IterMut<'_, K, V> {
+impl<K, V, S> IterMut<'_, K, V, S> {
     /// Returns a iterator of references over the remaining items.
     #[cfg_attr(feature = "inline-more", inline)]
-    pub(super) fn iter(&self) -> Iter<'_, K, V> {
+    pub(super) fn iter(&self) -> Iter<'_, K, V, S> {
         Iter {
             inner: self.inner.clone(),
             marker: PhantomData,
@@ -2253,14 +2264,15 @@ impl<K, V> IterMut<'_, K, V> {
 /// assert_eq!(iter.next(), None);
 /// assert_eq!(iter.next(), None);
 /// ```
-pub struct IntoIter<K, V, A: Allocator = Global> {
+pub struct IntoIter<K, V, S, A: Allocator = Global> {
     inner: RawIntoIter<(K, V), A>,
+    marker: PhantomData<S>,
 }
 
-impl<K, V, A: Allocator> IntoIter<K, V, A> {
+impl<K, V, S, A: Allocator> IntoIter<K, V, S, A> {
     /// Returns a iterator of references over the remaining items.
     #[cfg_attr(feature = "inline-more", inline)]
-    pub(super) fn iter(&self) -> Iter<'_, K, V> {
+    pub(super) fn iter(&self) -> Iter<'_, K, V, S> {
         Iter {
             inner: self.inner.iter(),
             marker: PhantomData,
@@ -2297,19 +2309,21 @@ impl<K, V, A: Allocator> IntoIter<K, V, A> {
 /// assert_eq!(keys.next(), None);
 /// assert_eq!(keys.next(), None);
 /// ```
-pub struct IntoKeys<K, V, A: Allocator = Global> {
-    inner: IntoIter<K, V, A>,
+pub struct IntoKeys<K, V, S, A: Allocator = Global> {
+    inner: IntoIter<K, V, S, A>,
+    marker: PhantomData<S>,
 }
 
-impl<K, V, A: Allocator> Default for IntoKeys<K, V, A> {
+impl<K, V, S, A: Allocator> Default for IntoKeys<K, V, S, A> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn default() -> Self {
         Self {
             inner: Default::default(),
+            marker: PhantomData,
         }
     }
 }
-impl<K, V, A: Allocator> Iterator for IntoKeys<K, V, A> {
+impl<K, V, S, A: Allocator> Iterator for IntoKeys<K, V, S, A> {
     type Item = K;
 
     #[inline]
@@ -2330,16 +2344,16 @@ impl<K, V, A: Allocator> Iterator for IntoKeys<K, V, A> {
     }
 }
 
-impl<K, V, A: Allocator> ExactSizeIterator for IntoKeys<K, V, A> {
+impl<K, V, S, A: Allocator> ExactSizeIterator for IntoKeys<K, V, S, A> {
     #[inline]
     fn len(&self) -> usize {
         self.inner.len()
     }
 }
 
-impl<K, V, A: Allocator> FusedIterator for IntoKeys<K, V, A> {}
+impl<K, V, S, A: Allocator> FusedIterator for IntoKeys<K, V, S, A> {}
 
-impl<K: Debug, V: Debug, A: Allocator> fmt::Debug for IntoKeys<K, V, A> {
+impl<K: Debug, V: Debug, S, A: Allocator> fmt::Debug for IntoKeys<K, V, S, A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
             .entries(self.inner.iter().map(|(k, _)| k))
@@ -2375,19 +2389,21 @@ impl<K: Debug, V: Debug, A: Allocator> fmt::Debug for IntoKeys<K, V, A> {
 /// assert_eq!(values.next(), None);
 /// assert_eq!(values.next(), None);
 /// ```
-pub struct IntoValues<K, V, A: Allocator = Global> {
-    inner: IntoIter<K, V, A>,
+pub struct IntoValues<K, V, S, A: Allocator = Global> {
+    inner: IntoIter<K, V, S, A>,
+    marker: PhantomData<S>,
 }
 
-impl<K, V, A: Allocator> Default for IntoValues<K, V, A> {
+impl<K, V, S, A: Allocator> Default for IntoValues<K, V, S, A> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn default() -> Self {
         Self {
             inner: Default::default(),
+            marker: PhantomData,
         }
     }
 }
-impl<K, V, A: Allocator> Iterator for IntoValues<K, V, A> {
+impl<K, V, S, A: Allocator> Iterator for IntoValues<K, V, S, A> {
     type Item = V;
 
     #[inline]
@@ -2408,16 +2424,16 @@ impl<K, V, A: Allocator> Iterator for IntoValues<K, V, A> {
     }
 }
 
-impl<K, V, A: Allocator> ExactSizeIterator for IntoValues<K, V, A> {
+impl<K, V, S, A: Allocator> ExactSizeIterator for IntoValues<K, V, S, A> {
     #[inline]
     fn len(&self) -> usize {
         self.inner.len()
     }
 }
 
-impl<K, V, A: Allocator> FusedIterator for IntoValues<K, V, A> {}
+impl<K, V, S, A: Allocator> FusedIterator for IntoValues<K, V, S, A> {}
 
-impl<K, V: Debug, A: Allocator> fmt::Debug for IntoValues<K, V, A> {
+impl<K, V: Debug, S, A: Allocator> fmt::Debug for IntoValues<K, V, S, A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
             .entries(self.inner.iter().map(|(_, v)| v))
@@ -2453,21 +2469,23 @@ impl<K, V: Debug, A: Allocator> fmt::Debug for IntoValues<K, V, A> {
 /// assert_eq!(keys.next(), None);
 /// assert_eq!(keys.next(), None);
 /// ```
-pub struct Keys<'a, K, V> {
-    inner: Iter<'a, K, V>,
+pub struct Keys<'a, K, V, S> {
+    inner: Iter<'a, K, V, S>,
+    marker: PhantomData<S>,
 }
 
 // FIXME(#26925) Remove in favor of `#[derive(Clone)]`
-impl<K, V> Clone for Keys<'_, K, V> {
+impl<K, V, S> Clone for Keys<'_, K, V, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn clone(&self) -> Self {
         Keys {
             inner: self.inner.clone(),
+            marker: PhantomData,
         }
     }
 }
 
-impl<K: Debug, V> fmt::Debug for Keys<'_, K, V> {
+impl<K: Debug, V, S> fmt::Debug for Keys<'_, K, V, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.clone()).finish()
     }
@@ -2501,21 +2519,23 @@ impl<K: Debug, V> fmt::Debug for Keys<'_, K, V> {
 /// assert_eq!(values.next(), None);
 /// assert_eq!(values.next(), None);
 /// ```
-pub struct Values<'a, K, V> {
-    inner: Iter<'a, K, V>,
+pub struct Values<'a, K, V, S> {
+    inner: Iter<'a, K, V, S>,
+    marker: PhantomData<S>,
 }
 
 // FIXME(#26925) Remove in favor of `#[derive(Clone)]`
-impl<K, V> Clone for Values<'_, K, V> {
+impl<K, V, S> Clone for Values<'_, K, V, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn clone(&self) -> Self {
         Values {
             inner: self.inner.clone(),
+            marker: PhantomData,
         }
     }
 }
 
-impl<K, V: Debug> fmt::Debug for Values<'_, K, V> {
+impl<K, V: Debug, S> fmt::Debug for Values<'_, K, V, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.clone()).finish()
     }
@@ -2549,14 +2569,15 @@ impl<K, V: Debug> fmt::Debug for Values<'_, K, V> {
 /// assert_eq!(drain_iter.next(), None);
 /// assert_eq!(drain_iter.next(), None);
 /// ```
-pub struct Drain<'a, K, V, A: Allocator = Global> {
+pub struct Drain<'a, K, V, S, A: Allocator = Global> {
     inner: RawDrain<'a, (K, V), A>,
+    marker: PhantomData<S>,
 }
 
-impl<K, V, A: Allocator> Drain<'_, K, V, A> {
+impl<K, V, S, A: Allocator> Drain<'_, K, V, S, A> {
     /// Returns a iterator of references over the remaining items.
     #[cfg_attr(feature = "inline-more", inline)]
-    pub(super) fn iter(&self) -> Iter<'_, K, V> {
+    pub(super) fn iter(&self) -> Iter<'_, K, V, S> {
         Iter {
             inner: self.inner.iter(),
             marker: PhantomData,
@@ -2596,15 +2617,16 @@ impl<K, V, A: Allocator> Drain<'_, K, V, A> {
 /// assert_eq!(map.len(), 1);
 /// ```
 #[must_use = "Iterators are lazy unless consumed"]
-pub struct ExtractIf<'a, K, V, F, A: Allocator = Global>
+pub struct ExtractIf<'a, K, V, F, S, A: Allocator = Global>
 where
     F: FnMut(&K, &mut V) -> bool,
 {
     f: F,
     inner: RawExtractIf<'a, (K, V), A>,
+    marker: PhantomData<S>,
 }
 
-impl<K, V, F, A> Iterator for ExtractIf<'_, K, V, F, A>
+impl<K, V, F, S, A> Iterator for ExtractIf<'_, K, V, F, S, A>
 where
     F: FnMut(&K, &mut V) -> bool,
     A: Allocator,
@@ -2622,7 +2644,7 @@ where
     }
 }
 
-impl<K, V, F> FusedIterator for ExtractIf<'_, K, V, F> where F: FnMut(&K, &mut V) -> bool {}
+impl<K, V, F, S> FusedIterator for ExtractIf<'_, K, V, F, S> where F: FnMut(&K, &mut V) -> bool {}
 
 /// A mutable iterator over the values of a `HashMap` in arbitrary order.
 /// The iterator element type is `&'a mut V`.
@@ -2651,8 +2673,9 @@ impl<K, V, F> FusedIterator for ExtractIf<'_, K, V, F> where F: FnMut(&K, &mut V
 /// assert_eq!(map.get(&1).unwrap(), &"One Mississippi".to_owned());
 /// assert_eq!(map.get(&2).unwrap(), &"Two Mississippi".to_owned());
 /// ```
-pub struct ValuesMut<'a, K, V> {
-    inner: IterMut<'a, K, V>,
+pub struct ValuesMut<'a, K, V, S> {
+    inner: IterMut<'a, K, V, S>,
+    marker: PhantomData<S>,
 }
 
 /// A view into a single entry in a map, which may either be vacant or occupied.
@@ -3058,7 +3081,7 @@ impl<K: Debug, V: Debug, S, A: Allocator> fmt::Display for OccupiedError<'_, K, 
 
 impl<'a, K, V, S, A: Allocator> IntoIterator for &'a HashMap<K, V, S, A> {
     type Item = (&'a K, &'a V);
-    type IntoIter = Iter<'a, K, V>;
+    type IntoIter = Iter<'a, K, V, S>;
 
     /// Creates an iterator over the entries of a `HashMap` in arbitrary order.
     /// The iterator element type is `(&'a K, &'a V)`.
@@ -3083,14 +3106,14 @@ impl<'a, K, V, S, A: Allocator> IntoIterator for &'a HashMap<K, V, S, A> {
     /// assert_eq!(map_one, map_two);
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    fn into_iter(self) -> Iter<'a, K, V> {
+    fn into_iter(self) -> Iter<'a, K, V, S> {
         self.iter()
     }
 }
 
 impl<'a, K, V, S, A: Allocator> IntoIterator for &'a mut HashMap<K, V, S, A> {
     type Item = (&'a K, &'a mut V);
-    type IntoIter = IterMut<'a, K, V>;
+    type IntoIter = IterMut<'a, K, V, S>;
 
     /// Creates an iterator over the entries of a `HashMap` in arbitrary order
     /// with mutable references to the values. The iterator element type is
@@ -3120,14 +3143,14 @@ impl<'a, K, V, S, A: Allocator> IntoIterator for &'a mut HashMap<K, V, S, A> {
     /// assert_eq!(vec, [(&"a", &2), (&"b", &4), (&"c", &6)]);
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    fn into_iter(self) -> IterMut<'a, K, V> {
+    fn into_iter(self) -> IterMut<'a, K, V, S> {
         self.iter_mut()
     }
 }
 
 impl<K, V, S, A: Allocator> IntoIterator for HashMap<K, V, S, A> {
     type Item = (K, V);
-    type IntoIter = IntoIter<K, V, A>;
+    type IntoIter = IntoIter<K, V, S, A>;
 
     /// Creates a consuming iterator, that is, one that moves each key-value
     /// pair out of the map in arbitrary order. The map cannot be used after
@@ -3148,14 +3171,15 @@ impl<K, V, S, A: Allocator> IntoIterator for HashMap<K, V, S, A> {
     /// assert_eq!(vec, [("a", 1), ("b", 2), ("c", 3)]);
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
-    fn into_iter(self) -> IntoIter<K, V, A> {
+    fn into_iter(self) -> IntoIter<K, V, S, A> {
         IntoIter {
             inner: self.table.into_iter(),
+            marker: PhantomData,
         }
     }
 }
 
-impl<K, V> Default for Iter<'_, K, V> {
+impl<K, V, S> Default for Iter<'_, K, V, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn default() -> Self {
         Self {
@@ -3164,7 +3188,7 @@ impl<K, V> Default for Iter<'_, K, V> {
         }
     }
 }
-impl<'a, K, V> Iterator for Iter<'a, K, V> {
+impl<'a, K, V, S> Iterator for Iter<'a, K, V, S> {
     type Item = (&'a K, &'a V);
 
     #[cfg_attr(feature = "inline-more", inline)]
@@ -3194,16 +3218,16 @@ impl<'a, K, V> Iterator for Iter<'a, K, V> {
         })
     }
 }
-impl<K, V> ExactSizeIterator for Iter<'_, K, V> {
+impl<K, V, S> ExactSizeIterator for Iter<'_, K, V, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn len(&self) -> usize {
         self.inner.len()
     }
 }
 
-impl<K, V> FusedIterator for Iter<'_, K, V> {}
+impl<K, V, S> FusedIterator for Iter<'_, K, V, S> {}
 
-impl<K, V> Default for IterMut<'_, K, V> {
+impl<K, V, S> Default for IterMut<'_, K, V, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn default() -> Self {
         Self {
@@ -3212,7 +3236,7 @@ impl<K, V> Default for IterMut<'_, K, V> {
         }
     }
 }
-impl<'a, K, V> Iterator for IterMut<'a, K, V> {
+impl<'a, K, V, S> Iterator for IterMut<'a, K, V, S> {
     type Item = (&'a K, &'a mut V);
 
     #[cfg_attr(feature = "inline-more", inline)]
@@ -3242,15 +3266,15 @@ impl<'a, K, V> Iterator for IterMut<'a, K, V> {
         })
     }
 }
-impl<K, V> ExactSizeIterator for IterMut<'_, K, V> {
+impl<K, V, S> ExactSizeIterator for IterMut<'_, K, V, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn len(&self) -> usize {
         self.inner.len()
     }
 }
-impl<K, V> FusedIterator for IterMut<'_, K, V> {}
+impl<K, V, S> FusedIterator for IterMut<'_, K, V, S> {}
 
-impl<K, V> fmt::Debug for IterMut<'_, K, V>
+impl<K, V, S> fmt::Debug for IterMut<'_, K, V, S>
 where
     K: fmt::Debug,
     V: fmt::Debug,
@@ -3260,15 +3284,16 @@ where
     }
 }
 
-impl<K, V, A: Allocator> Default for IntoIter<K, V, A> {
+impl<K, V, S, A: Allocator> Default for IntoIter<K, V, S, A> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn default() -> Self {
         Self {
             inner: Default::default(),
+            marker: PhantomData,
         }
     }
 }
-impl<K, V, A: Allocator> Iterator for IntoIter<K, V, A> {
+impl<K, V, S, A: Allocator> Iterator for IntoIter<K, V, S, A> {
     type Item = (K, V);
 
     #[cfg_attr(feature = "inline-more", inline)]
@@ -3288,29 +3313,30 @@ impl<K, V, A: Allocator> Iterator for IntoIter<K, V, A> {
         self.inner.fold(init, f)
     }
 }
-impl<K, V, A: Allocator> ExactSizeIterator for IntoIter<K, V, A> {
+impl<K, V, S, A: Allocator> ExactSizeIterator for IntoIter<K, V, S, A> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn len(&self) -> usize {
         self.inner.len()
     }
 }
-impl<K, V, A: Allocator> FusedIterator for IntoIter<K, V, A> {}
+impl<K, V, S, A: Allocator> FusedIterator for IntoIter<K, V, S, A> {}
 
-impl<K: Debug, V: Debug, A: Allocator> fmt::Debug for IntoIter<K, V, A> {
+impl<K: Debug, V: Debug, S, A: Allocator> fmt::Debug for IntoIter<K, V, S, A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.iter()).finish()
     }
 }
 
-impl<K, V> Default for Keys<'_, K, V> {
+impl<K, V, S> Default for Keys<'_, K, V, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn default() -> Self {
         Self {
             inner: Default::default(),
+            marker: PhantomData,
         }
     }
 }
-impl<'a, K, V> Iterator for Keys<'a, K, V> {
+impl<'a, K, V, S> Iterator for Keys<'a, K, V, S> {
     type Item = &'a K;
 
     #[cfg_attr(feature = "inline-more", inline)]
@@ -3334,23 +3360,24 @@ impl<'a, K, V> Iterator for Keys<'a, K, V> {
         self.inner.fold(init, |acc, (k, _)| f(acc, k))
     }
 }
-impl<K, V> ExactSizeIterator for Keys<'_, K, V> {
+impl<K, V, S> ExactSizeIterator for Keys<'_, K, V, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn len(&self) -> usize {
         self.inner.len()
     }
 }
-impl<K, V> FusedIterator for Keys<'_, K, V> {}
+impl<K, V, S> FusedIterator for Keys<'_, K, V, S> {}
 
-impl<K, V> Default for Values<'_, K, V> {
+impl<K, V, S> Default for Values<'_, K, V, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn default() -> Self {
         Self {
             inner: Default::default(),
+            marker: PhantomData,
         }
     }
 }
-impl<'a, K, V> Iterator for Values<'a, K, V> {
+impl<'a, K, V, S> Iterator for Values<'a, K, V, S> {
     type Item = &'a V;
 
     #[cfg_attr(feature = "inline-more", inline)]
@@ -3374,23 +3401,24 @@ impl<'a, K, V> Iterator for Values<'a, K, V> {
         self.inner.fold(init, |acc, (_, v)| f(acc, v))
     }
 }
-impl<K, V> ExactSizeIterator for Values<'_, K, V> {
+impl<K, V, S> ExactSizeIterator for Values<'_, K, V, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn len(&self) -> usize {
         self.inner.len()
     }
 }
-impl<K, V> FusedIterator for Values<'_, K, V> {}
+impl<K, V, S> FusedIterator for Values<'_, K, V, S> {}
 
-impl<K, V> Default for ValuesMut<'_, K, V> {
+impl<K, V, S> Default for ValuesMut<'_, K, V, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn default() -> Self {
         Self {
             inner: Default::default(),
+            marker: PhantomData,
         }
     }
 }
-impl<'a, K, V> Iterator for ValuesMut<'a, K, V> {
+impl<'a, K, V, S> Iterator for ValuesMut<'a, K, V, S> {
     type Item = &'a mut V;
 
     #[cfg_attr(feature = "inline-more", inline)]
@@ -3414,15 +3442,15 @@ impl<'a, K, V> Iterator for ValuesMut<'a, K, V> {
         self.inner.fold(init, |acc, (_, v)| f(acc, v))
     }
 }
-impl<K, V> ExactSizeIterator for ValuesMut<'_, K, V> {
+impl<K, V, S> ExactSizeIterator for ValuesMut<'_, K, V, S> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn len(&self) -> usize {
         self.inner.len()
     }
 }
-impl<K, V> FusedIterator for ValuesMut<'_, K, V> {}
+impl<K, V, S> FusedIterator for ValuesMut<'_, K, V, S> {}
 
-impl<K, V: Debug> fmt::Debug for ValuesMut<'_, K, V> {
+impl<K, V: Debug, S> fmt::Debug for ValuesMut<'_, K, V, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
             .entries(self.inner.iter().map(|(_, val)| val))
@@ -3430,7 +3458,7 @@ impl<K, V: Debug> fmt::Debug for ValuesMut<'_, K, V> {
     }
 }
 
-impl<K, V, A: Allocator> Iterator for Drain<'_, K, V, A> {
+impl<K, V, S, A: Allocator> Iterator for Drain<'_, K, V, S, A> {
     type Item = (K, V);
 
     #[cfg_attr(feature = "inline-more", inline)]
@@ -3450,15 +3478,15 @@ impl<K, V, A: Allocator> Iterator for Drain<'_, K, V, A> {
         self.inner.fold(init, f)
     }
 }
-impl<K, V, A: Allocator> ExactSizeIterator for Drain<'_, K, V, A> {
+impl<K, V, S, A: Allocator> ExactSizeIterator for Drain<'_, K, V, S, A> {
     #[cfg_attr(feature = "inline-more", inline)]
     fn len(&self) -> usize {
         self.inner.len()
     }
 }
-impl<K, V, A: Allocator> FusedIterator for Drain<'_, K, V, A> {}
+impl<K, V, S, A: Allocator> FusedIterator for Drain<'_, K, V, S, A> {}
 
-impl<K, V, A> fmt::Debug for Drain<'_, K, V, A>
+impl<K, V, S, A> fmt::Debug for Drain<'_, K, V, S, A>
 where
     K: fmt::Debug,
     V: fmt::Debug,
@@ -4649,37 +4677,37 @@ fn assert_covariance() {
     fn map_val<'new>(v: HashMap<u8, &'static str>) -> HashMap<u8, &'new str> {
         v
     }
-    fn iter_key<'a, 'new>(v: Iter<'a, &'static str, u8>) -> Iter<'a, &'new str, u8> {
+    fn iter_key<'a, 'new, S>(v: Iter<'a, &'static str, u8, S>) -> Iter<'a, &'new str, u8, S> {
         v
     }
-    fn iter_val<'a, 'new>(v: Iter<'a, u8, &'static str>) -> Iter<'a, u8, &'new str> {
+    fn iter_val<'a, 'new, S>(v: Iter<'a, u8, &'static str, S>) -> Iter<'a, u8, &'new str, S> {
         v
     }
-    fn into_iter_key<'new, A: Allocator>(
-        v: IntoIter<&'static str, u8, A>,
-    ) -> IntoIter<&'new str, u8, A> {
+    fn into_iter_key<'new, S, A: Allocator>(
+        v: IntoIter<&'static str, u8, S, A>,
+    ) -> IntoIter<&'new str, u8, S, A> {
         v
     }
-    fn into_iter_val<'new, A: Allocator>(
-        v: IntoIter<u8, &'static str, A>,
-    ) -> IntoIter<u8, &'new str, A> {
+    fn into_iter_val<'new, S, A: Allocator>(
+        v: IntoIter<u8, &'static str, S, A>,
+    ) -> IntoIter<u8, &'new str, S, A> {
         v
     }
-    fn keys_key<'a, 'new>(v: Keys<'a, &'static str, u8>) -> Keys<'a, &'new str, u8> {
+    fn keys_key<'a, 'new, S>(v: Keys<'a, &'static str, u8, S>) -> Keys<'a, &'new str, u8, S> {
         v
     }
-    fn keys_val<'a, 'new>(v: Keys<'a, u8, &'static str>) -> Keys<'a, u8, &'new str> {
+    fn keys_val<'a, 'new, S>(v: Keys<'a, u8, &'static str, S>) -> Keys<'a, u8, &'new str, S> {
         v
     }
-    fn values_key<'a, 'new>(v: Values<'a, &'static str, u8>) -> Values<'a, &'new str, u8> {
+    fn values_key<'a, 'new, S>(v: Values<'a, &'static str, u8, S>) -> Values<'a, &'new str, u8, S> {
         v
     }
-    fn values_val<'a, 'new>(v: Values<'a, u8, &'static str>) -> Values<'a, u8, &'new str> {
+    fn values_val<'a, 'new, S>(v: Values<'a, u8, &'static str, S>) -> Values<'a, u8, &'new str, S> {
         v
     }
-    fn drain<'new>(
-        d: Drain<'static, &'static str, &'static str>,
-    ) -> Drain<'new, &'new str, &'new str> {
+    fn drain<'new, S>(
+        d: Drain<'static, &'static str, &'static str, S>,
+    ) -> Drain<'new, &'new str, &'new str, S> {
         d
     }
 }
