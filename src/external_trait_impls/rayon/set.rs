@@ -4,6 +4,7 @@ use super::map;
 use crate::hash_set::HashSet;
 use crate::raw::{Allocator, Global};
 use core::hash::{BuildHasher, Hash};
+use core::marker::PhantomData;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator, ParallelExtend, ParallelIterator};
 
@@ -16,11 +17,12 @@ use rayon::iter::{FromParallelIterator, IntoParallelIterator, ParallelExtend, Pa
 /// [`into_par_iter`]: /hashbrown/struct.HashSet.html#method.into_par_iter
 /// [`HashSet`]: /hashbrown/struct.HashSet.html
 /// [`IntoParallelIterator`]: https://docs.rs/rayon/1.0/rayon/iter/trait.IntoParallelIterator.html
-pub struct IntoParIter<T, A: Allocator = Global> {
-    inner: map::IntoParIter<T, (), A>,
+pub struct IntoParIter<T, S, A: Allocator = Global> {
+    inner: map::IntoParIter<T, (), S, A>,
+    marker: PhantomData<S>,
 }
 
-impl<T: Send, A: Allocator + Send> ParallelIterator for IntoParIter<T, A> {
+impl<T: Send, S: Send, A: Allocator + Send> ParallelIterator for IntoParIter<T, S, A> {
     type Item = T;
 
     fn drive_unindexed<C>(self, consumer: C) -> C::Result
@@ -38,11 +40,12 @@ impl<T: Send, A: Allocator + Send> ParallelIterator for IntoParIter<T, A> {
 ///
 /// [`par_drain`]: /hashbrown/struct.HashSet.html#method.par_drain
 /// [`HashSet`]: /hashbrown/struct.HashSet.html
-pub struct ParDrain<'a, T, A: Allocator = Global> {
-    inner: map::ParDrain<'a, T, (), A>,
+pub struct ParDrain<'a, T, S, A: Allocator = Global> {
+    inner: map::ParDrain<'a, T, (), S, A>,
+    marker: PhantomData<S>,
 }
 
-impl<T: Send, A: Allocator + Send + Sync> ParallelIterator for ParDrain<'_, T, A> {
+impl<T: Send, S: Send, A: Allocator + Send + Sync> ParallelIterator for ParDrain<'_, T, S, A> {
     type Item = T;
 
     fn drive_unindexed<C>(self, consumer: C) -> C::Result
@@ -62,11 +65,11 @@ impl<T: Send, A: Allocator + Send + Sync> ParallelIterator for ParDrain<'_, T, A
 /// [`par_iter`]: /hashbrown/struct.HashSet.html#method.par_iter
 /// [`HashSet`]: /hashbrown/struct.HashSet.html
 /// [`IntoParallelRefIterator`]: https://docs.rs/rayon/1.0/rayon/iter/trait.IntoParallelRefIterator.html
-pub struct ParIter<'a, T> {
-    inner: map::ParKeys<'a, T, ()>,
+pub struct ParIter<'a, T, S> {
+    inner: map::ParKeys<'a, T, (), S>,
 }
 
-impl<'a, T: Sync> ParallelIterator for ParIter<'a, T> {
+impl<'a, T: Sync, S: Send> ParallelIterator for ParIter<'a, T, S> {
     type Item = &'a T;
 
     fn drive_unindexed<C>(self, consumer: C) -> C::Result
@@ -93,7 +96,7 @@ pub struct ParDifference<'a, T, S, A: Allocator = Global> {
 impl<'a, T, S, A> ParallelIterator for ParDifference<'a, T, S, A>
 where
     T: Eq + Hash + Sync,
-    S: BuildHasher + Sync,
+    S: BuildHasher + Send + Sync,
     A: Allocator + Sync,
 {
     type Item = &'a T;
@@ -126,7 +129,7 @@ pub struct ParSymmetricDifference<'a, T, S, A: Allocator = Global> {
 impl<'a, T, S, A> ParallelIterator for ParSymmetricDifference<'a, T, S, A>
 where
     T: Eq + Hash + Sync,
-    S: BuildHasher + Sync,
+    S: BuildHasher + Send + Sync,
     A: Allocator + Sync,
 {
     type Item = &'a T;
@@ -158,7 +161,7 @@ pub struct ParIntersection<'a, T, S, A: Allocator = Global> {
 impl<'a, T, S, A> ParallelIterator for ParIntersection<'a, T, S, A>
 where
     T: Eq + Hash + Sync,
-    S: BuildHasher + Sync,
+    S: BuildHasher + Send + Sync,
     A: Allocator + Sync,
 {
     type Item = &'a T;
@@ -189,7 +192,7 @@ pub struct ParUnion<'a, T, S, A: Allocator = Global> {
 impl<'a, T, S, A> ParallelIterator for ParUnion<'a, T, S, A>
 where
     T: Eq + Hash + Sync,
-    S: BuildHasher + Sync,
+    S: BuildHasher + Send + Sync,
     A: Allocator + Sync,
 {
     type Item = &'a T;
@@ -215,7 +218,7 @@ where
 impl<T, S, A> HashSet<T, S, A>
 where
     T: Eq + Hash + Sync,
-    S: BuildHasher + Sync,
+    S: BuildHasher + Send + Sync,
     A: Allocator + Sync,
 {
     /// Visits (potentially in parallel) the values representing the union,
@@ -294,28 +297,30 @@ where
     /// Consumes (potentially in parallel) all values in an arbitrary order,
     /// while preserving the set's allocated memory for reuse.
     #[cfg_attr(feature = "inline-more", inline)]
-    pub fn par_drain(&mut self) -> ParDrain<'_, T, A> {
+    pub fn par_drain(&mut self) -> ParDrain<'_, T, S, A> {
         ParDrain {
             inner: self.map.par_drain(),
+            marker: PhantomData,
         }
     }
 }
 
-impl<T: Send, S, A: Allocator + Send> IntoParallelIterator for HashSet<T, S, A> {
+impl<T: Send, S: Send, A: Allocator + Send> IntoParallelIterator for HashSet<T, S, A> {
     type Item = T;
-    type Iter = IntoParIter<T, A>;
+    type Iter = IntoParIter<T, S, A>;
 
     #[cfg_attr(feature = "inline-more", inline)]
     fn into_par_iter(self) -> Self::Iter {
         IntoParIter {
             inner: self.map.into_par_iter(),
+            marker: PhantomData,
         }
     }
 }
 
-impl<'a, T: Sync, S, A: Allocator> IntoParallelIterator for &'a HashSet<T, S, A> {
+impl<'a, T: Sync, S: Send, A: Allocator> IntoParallelIterator for &'a HashSet<T, S, A> {
     type Item = &'a T;
-    type Iter = ParIter<'a, T>;
+    type Iter = ParIter<'a, T, S>;
 
     #[cfg_attr(feature = "inline-more", inline)]
     fn into_par_iter(self) -> Self::Iter {
